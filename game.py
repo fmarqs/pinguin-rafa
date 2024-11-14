@@ -2,6 +2,7 @@ import pygame
 import random
 import time
 import os
+import math
 
 # Inicializando o Pygame
 pygame.init()
@@ -60,6 +61,10 @@ MAD_CLIENT_IMAGE = pygame.image.load("mad_client.png").convert_alpha()
 
 # Configuração da área da "mesa de entregas"
 DELIVERY_TABLE_AREA = pygame.Rect(150, 981, 970, 98)
+# Definir área de coleta da mesa de entregas
+DELIVERY_PICKUP_AREA = pygame.Rect(550, 1000, 300, 50)  # Define uma área retangular pequena dentro da mesa de entregas
+ORDER_PICKUP_POSITION = (1041, 957)
+
 
 def get_centered_position(image):
     image_rect = image.get_rect()
@@ -176,7 +181,7 @@ class Character(pygame.sprite.Sprite):
         super().__init__()
         self.image = CLIENTE_EM_PE
         self.rect = self.image.get_rect(center=(x, y))
-        self.speed = 5
+        self.speed = 10
         self.target_pos = None
         self.carrying_meal = None
 
@@ -195,10 +200,26 @@ class Character(pygame.sprite.Sprite):
     def set_target(self, pos):
         self.target_pos = pos
 
+    # Modificar a função `pick_up_order` na classe `Character`
+    def pick_up_order(self):
+        # Verifique se a garçonete está na posição exata para pegar o pedido
+        if self.rect.center == ORDER_PICKUP_POSITION:
+            self.carrying_meal = True
+            return True
+        return False
+
+
+    def deliver_order(self, customer):
+        if self.carrying_meal:
+            self.carrying_meal = None
+            customer.received_order = True
+            return True
+        return False
+
     def attend_customer(self, customer):
         if customer.waiting_for_order and not customer.attended:
-            self.set_target(customer.rect.center)  # Define o alvo da garçonete para a posição do cliente
-
+            customer.show_order = False  # Oculta o pedido até a garçonete chegar
+            self.set_target(customer.rect.center)
 
 class Customer(pygame.sprite.Sprite):
     def __init__(self, start_position, order_image):
@@ -210,14 +231,16 @@ class Customer(pygame.sprite.Sprite):
         self.waiting_for_order = False
         self.order = order_image
         self.target_position = None
-        self.speed = 2
+        self.speed = 10
         self.is_moving = False
         self.attended = False
         self.in_queue = True
         self.received_order = False
-        self.payment_timer = None  # Temporizador de pagamento após o recebimento do pedido
-        self.mad = False  # Indica se o cliente está bravo
-        self.payment_amount = 15  # Valor padrão de pagamento
+        self.payment_timer = None
+        self.mad = False
+        self.payment_amount = 15
+        self.show_order = False  # Novo atributo para controlar a exibição do pedido
+
 
     def set_target(self, target_position):
         self.target_position = target_position
@@ -238,26 +261,19 @@ class Customer(pygame.sprite.Sprite):
                 self.image = self.image_sitting
                 self.waiting_for_order = True
 
-        # Verifica o temporizador de pagamento e atualiza o status
         if self.received_order and not self.payment_timer:
-            # Inicia o temporizador de pagamento com um tempo aleatório entre 3 e 8 segundos
             self.payment_timer = time.time() + random.uniform(3, 8)
 
         elif self.payment_timer and time.time() >= self.payment_timer:
-            # Cliente paga e vai embora
-            self.rect.center = (-100, -100)  # Movendo o cliente para fora da tela
-            self.kill()  # Remove o cliente do jogo
+            self.kill()
 
     def draw_order(self, screen):
-        # Exibe o pedido acima do cliente enquanto ele espera e até que o pedido seja entregue
-        if self.waiting_for_order or self.attended:
+        if self.show_order:  # Exibe apenas quando `show_order` está True
             screen.blit(self.order, (self.rect.centerx - self.order.get_width() // 2,
                                      self.rect.top - self.order.get_height()))
         
-        # Exibe a imagem do cliente bravo se ele estiver bravo
         if self.mad:
             screen.blit(MAD_CLIENT_IMAGE, (self.rect.centerx - MAD_CLIENT_IMAGE.get_width() // 2, self.rect.centery - MAD_CLIENT_IMAGE.get_height() // 2))
-
 
 # Classe para a Mesa
 class Table(pygame.sprite.Sprite):
@@ -266,22 +282,23 @@ class Table(pygame.sprite.Sprite):
         self.image = TABLE_IMAGE
         self.rect = self.image.get_rect(center=(x, y))
         self.occupied = False  # Indica se a mesa está ocupada
+        self.order_on_table = None  # Novo atributo para o pedido na mesa
+
 
 # Carregar a imagem de fundo para a primeira fase
 BACKGROUND_IMAGE = pygame.image.load("background_1.png").convert()
 
 class Game:
     def __init__(self):
-        self.delivered_orders = []
         self.character = Character(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         
-        # Definindo mesas com áreas de clique e posições das cadeiras
+        # Definindo mesas com posições de entrega
         self.tables = [
-            {"positions": [(538, 400), (913, 400)], "area": pygame.Rect(480, 350, 500, 100), "occupied": False},
-            {"positions": [(1184, 400), (1560, 397)], "area": pygame.Rect(1100, 350, 500, 100), "occupied": False},
-            {"positions": [(863, 611), (1237, 609)], "area": pygame.Rect(800, 550, 500, 120), "occupied": False},
-            {"positions": [(541, 888), (981, 888)], "area": pygame.Rect(480, 850, 500, 100), "occupied": False},
-            {"positions": [(1186, 888), (1556, 888)], "area": pygame.Rect(1100, 850, 500, 100), "occupied": False}
+            {"positions": [(538, 400), (913, 400)], "area": pygame.Rect(480, 350, 500, 100), "occupied": False, "delivery_position": (736, 465), "order_on_table": None, "order_position": (633, 318)},
+            {"positions": [(1184, 400), (1560, 397)], "area": pygame.Rect(1100, 350, 500, 100), "occupied": False, "delivery_position": (1379, 475), "order_on_table": None, "order_position": (1281, 317)},
+            {"positions": [(863, 611), (1237, 609)], "area": pygame.Rect(800, 550, 500, 120), "occupied": False, "delivery_position": (1057, 705), "order_on_table": None, "order_position": (963, 529)},
+            {"positions": [(541, 888), (981, 888)], "area": pygame.Rect(480, 850, 500, 100), "occupied": False, "delivery_position": (727, 740), "order_on_table": None, "order_position": (633, 807)},
+            {"positions": [(1186, 888), (1556, 888)], "area": pygame.Rect(1100, 850, 500, 100), "occupied": False, "delivery_position": (1368, 728), "order_on_table": None, "order_position": (1285, 805)}
         ]
         
         self.queue_positions = [(528, 496), (550, 496), (500, 496), (450, 496), (400, 496)]
@@ -294,7 +311,11 @@ class Game:
         self.last_customer_time = time.time()
         self.order_queue = []
         self.order_ready_timer = {}
-        self.waitress_target_customer = None  # Cliente atual para anotar o pedido
+        self.delivery_positions = []
+        self.waitress_target_customer = None
+        self.target_order_click = False  # Novo atributo para monitorar o estado de coleta
+        self.target_customer_for_delivery = None  # Cliente que receberá o pedido
+
 
     def spawn_customer(self):
         if len(self.customers) < len(self.queue_positions) and time.time() - self.last_customer_time > 10:
@@ -312,20 +333,18 @@ class Game:
             customer.payment_amount = 10
         else:
             customer.payment_amount = 15
-        self.score += customer.payment_amount  # Atualiza o score com o valor do pagamento
+        self.score += customer.payment_amount
         customer.received_order = True
 
-    # Método para verificar o progresso da fase
     def check_goal(self):
         if self.score >= self.goal:
             print("Meta alcançada! Fase concluída.")
-            # Implementar lógica de avanço de fase aqui, se desejado
 
-    # No método `run` da classe `Game`, atualize a lógica para entregar o pedido ao cliente
     def run(self):
         running = True
+        self.target_order_click = False  # Inicializa o estado do clique para pegar o pedido
+
         while running:
-            # Desenhar o fundo na tela
             screen.blit(BACKGROUND_IMAGE, (0, 0))
 
             for event in pygame.event.get():
@@ -334,12 +353,36 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     pos = pygame.mouse.get_pos()
 
+                     # Clique para pegar pedido pronto na mesa de entregas
+                    if self.order_queue and self.delivery_positions:
+                        order_position = self.delivery_positions[0]
+                        order_rect = pygame.Rect(order_position[0], order_position[1], 50, 50)
+
+                        if order_rect.collidepoint(pos):
+                            print("Clique detectado na área do pedido")
+                            self.character.set_target(ORDER_PICKUP_POSITION)
+                            self.target_order_click = True
+
+                    # Clique para entregar o pedido ao cliente (após pegar o pedido)
+                    if self.character.carrying_meal:
+                        for table in self.tables:
+                            if table["area"].collidepoint(pos):
+                                # Define o destino como a posição de entrega da mesa onde o cliente está
+                                self.character.set_target(table["delivery_position"])
+                                self.target_customer_for_delivery = next(
+                                    (customer for customer in self.customers if customer.rect.colliderect(table["area"]) and customer.waiting_for_order),
+                                    None
+                                )
+                                break
+
+
                     # Seleciona cliente na fila para se mover para uma mesa
                     for customer in self.customers:
                         if customer.rect.collidepoint(pos) and not customer.is_moving:
                             self.selected_customer = customer
                             break
-                    
+
+                    # Se o cliente for selecionado, move-o para uma mesa disponível
                     if self.selected_customer:
                         for table in self.tables:
                             if not table["occupied"] and table["area"].collidepoint(pos):
@@ -348,53 +391,107 @@ class Game:
                                 self.selected_customer = None
                                 self.update_queue()
                                 break
-                    
-                    # Registrar pedido se o cliente já estiver sentado
+
+                    # Clique para registrar o pedido de um cliente sentado
                     for customer in self.customers:
                         if customer.waiting_for_order and not customer.attended:
+                            customer.show_order = False  # Oculta o pedido até a garçonete chegar
                             for table in self.tables:
                                 if table["area"].collidepoint(pos) and customer.rect.colliderect(table["area"]):
+                                    # Move a garçonete para a `delivery_position` da mesa para registrar o pedido
+                                    self.character.set_target(table["delivery_position"])
                                     self.waitress_target_customer = customer
-                                    self.character.attend_customer(customer)
                                     break
-                    
-                    # Detectar e pegar pedido na mesa de entrega
-                    delivery_table_start_x = 1100  # Coordenada X inicial da mesa de entrega
-                    delivery_table_y = 981  # Coordenada Y da mesa de entrega
-                    for index, order in enumerate(self.delivered_orders):
-                        order_position = pygame.Rect(delivery_table_start_x - index * 100, delivery_table_y, order.get_width(), order.get_height())
-                        if order_position.collidepoint(pos) and not self.character.carrying_meal:
-                            # Mover a garçonete até o pedido
-                            self.character.set_target((order_position.centerx, order_position.centery))
-                            self.character.carrying_meal = order  # A garçonete começa a carregar o pedido
-                            self.delivered_orders.pop(index)  # Remove o pedido da mesa de entregas
-                            break
 
-                    # Entregar o pedido ao cliente quando clicar na mesa
-                    if self.character.carrying_meal:
-                        for table in self.tables:
-                            if table["area"].collidepoint(pos):
-                                for customer in self.customers:
-                                    if customer.rect.colliderect(table["area"]) and customer.waiting_for_order:
-                                        self.character.set_target(customer.rect.center)
-                                        self.deliver_order_to_customer(customer)  # Atualiza o cliente e score
-                                        table["occupied"] = False
-                                        self.character.carrying_meal = None
-                                        self.check_goal()
-                                        break
+                     # Quando a garçonete atingir a posição de coleta e o pedido tiver sido clicado
+                    if self.target_order_click and self.character.pick_up_order():
+                        if self.order_queue:
+                            # Retira o pedido da fila de entrega
+                            self.order_queue.pop(0)
+                            self.delivery_positions.pop(0)
+                            self.target_order_click = False  # Resetar a ação de coleta
+
+                            # Define o cliente de destino para entrega do pedido
+                            for customer in self.customers:
+                                if customer.waiting_for_order and not customer.received_order:
+                                    self.character.set_target(customer.rect.center)
+                                    self.target_customer_for_delivery = customer  # Marca o cliente para entrega
+                                    break
+
+                            # Renderizar o pedido acima do cliente quando estiver marcado para exibição
+                            for customer in self.customers:
+                                if customer.show_order:
+                                    screen.blit(customer.order, (customer.rect.centerx - customer.order.get_width() // 2,
+                                                                customer.rect.top - customer.order.get_height()))
+                                            
+                    
+
+            # Verifica se a garçonete chegou ao cliente para entregar o pedido
+            if hasattr(self, 'target_customer_for_delivery') and self.target_customer_for_delivery and self.character.deliver_order(self.target_customer_for_delivery):
+                self.deliver_order_to_customer(self.target_customer_for_delivery)
+
+                # Encontra a mesa associada ao cliente e coloca o pedido na mesa
+                for table in self.tables:
+                    if table["area"].colliderect(self.target_customer_for_delivery.rect):
+                        table["order_on_table"] = self.target_customer_for_delivery.order  # Armazena o pedido na mesa
+                        break
+
+                self.target_customer_for_delivery = None  # Reseta o cliente de entrega após entregar o pedido
+                self.character.carrying_meal = None
+
+            # Verifica se a garçonete chegou ao cliente para anotar o pedido
+            if self.waitress_target_customer and not self.character.target_pos:
+                for table in self.tables:
+                    if table["area"].colliderect(self.waitress_target_customer.rect):
+                        # Define a posição de atendimento da garçonete
+                        self.character.set_target(table["delivery_position"])
+                        if self.character.rect.center == table["delivery_position"]:
+                            self.waitress_target_customer.attended = True
+                            self.waitress_target_customer.order_made = True
+                            self.order_queue.append(self.waitress_target_customer.order)
+                            self.order_ready_timer[self.waitress_target_customer.order] = time.time() + 9
+                            self.waitress_target_customer.show_order = True  # Exibir o pedido acima do cliente
+                            self.waitress_target_customer = None
+                        break
+
+            # Verifica se a garçonete alcançou a posição de coleta e o pedido foi clicado
+            if self.target_order_click and self.character.pick_up_order():
+                # Retira o pedido da fila de entrega e reseta o clique para pegar o pedido
+                if self.order_queue:
+                    self.order_queue.pop(0)
+                    self.delivery_positions.pop(0)
+                    self.target_order_click = False
+                    # Define que a garçonete está carregando o pedido, mas aguarda o próximo clique na mesa
+                    self.character.carrying_meal = True
+
+            # Verifica se a garçonete chegou ao cliente para entregar o pedido
+            if self.target_customer_for_delivery and self.character.rect.center == self.character.target_pos:
+                self.deliver_order_to_customer(self.target_customer_for_delivery)
+                self.target_customer_for_delivery = None  # Reseta o cliente de entrega após entregar o pedido
+                self.character.carrying_meal = None  # Retira o item da garçonete  
+
+            # Renderizar o pedido nas posições específicas da mesa
+            for table in self.tables:
+                if table.get("order_on_table") is not None:
+                    screen.blit(table["order_on_table"], table["order_position"])
+
+            # Remover clientes que saíram e liberar mesas
+            for customer in self.customers:
+                if customer.payment_timer and time.time() >= customer.payment_timer:
+                    # Encontre a mesa onde o cliente estava e marque-a como desocupada
+                    for table in self.tables:
+                        if table["area"].colliderect(customer.rect):
+                            table["occupied"] = False
+                            table["order_on_table"] = None  # Remove o pedido da mesa
+                            break
+                    customer.kill()  # Remove o cliente do jogo
+            
 
             # Atualizar movimento da garçonete e dos clientes
             self.character.update()
             self.customers.update()
             self.spawn_customer()
-
-            # Verifica se a garçonete alcançou o cliente para anotar o pedido
-            if self.waitress_target_customer and not self.character.target_pos:
-                self.waitress_target_customer.attended = True
-                self.waitress_target_customer.order_made = True
-                self.order_queue.append(self.waitress_target_customer.order)
-                self.order_ready_timer[self.waitress_target_customer.order] = time.time() + 9
-                self.waitress_target_customer = None
+            display_mouse_position()
 
             # Atualizar e desenhar os pedidos na mesa de entrega
             self.update_orders_on_delivery_table()
@@ -416,23 +513,17 @@ class Game:
         score_text = font.render(f"Pontuação: {self.score}", True, BLACK)
         screen.blit(score_text, (10, 40))
 
-    # Modifique o método update_orders_on_delivery_table para usar delivered_orders
     def update_orders_on_delivery_table(self):
-        # Definir posição inicial da mesa de entregas
         delivery_table_start_x = 1100
         delivery_table_y = 981
         current_time = time.time()
         
-        # Mover pedidos prontos de order_queue para delivered_orders
-        for order in list(self.order_queue):  # Criamos uma cópia com list() para iterar
-            if current_time >= self.order_ready_timer.get(order, float('inf')):
-                self.delivered_orders.append(order)
-                self.order_queue.remove(order)  # Remover o pedido de order_queue
-        
-        # Exibir todos os pedidos na mesa de entregas da direita para a esquerda
-        for index, order in enumerate(self.delivered_orders):
-            screen.blit(order, (delivery_table_start_x - index * 100, delivery_table_y))
+        ready_orders = [order for order in self.order_queue if current_time >= self.order_ready_timer.get(order, float('inf'))]
+        self.delivery_positions = [(delivery_table_start_x - index * 100, delivery_table_y) for index, _ in enumerate(ready_orders)]
 
+        # Exibir pedidos prontos na mesa de entrega
+        for index, order in enumerate(ready_orders):
+            screen.blit(order, self.delivery_positions[index])
 
     def update_queue(self):
         queue_index = 0
@@ -440,6 +531,7 @@ class Game:
             if customer.in_queue:
                 customer.rect.center = self.queue_positions[queue_index]
                 queue_index += 1
+
 
 # Executando o jogo
 if __name__ == "__main__":
