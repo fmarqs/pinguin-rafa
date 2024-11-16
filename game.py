@@ -21,6 +21,22 @@ FPS = 120
 # Fonte para exibir texto
 font = pygame.font.Font(None, 36)
 
+def load_character_images(folder_path):
+    characters = {}
+    for character_name in os.listdir(folder_path):
+        character_folder = os.path.join(folder_path, character_name)
+        if os.path.isdir(character_folder):
+            characters[character_name] = {
+                "standing": pygame.image.load(os.path.join(character_folder, "standing.png")).convert_alpha(),
+                "waiting": pygame.image.load(os.path.join(character_folder, "waiting.png")).convert_alpha(),
+                "making_order": pygame.image.load(os.path.join(character_folder, "making_order.png")).convert_alpha(),
+                "mad": pygame.image.load(os.path.join(character_folder, "mad.png")).convert_alpha(),
+                "eating": pygame.image.load(os.path.join(character_folder, "eating.png")).convert_alpha(),
+            }
+    return characters
+
+CHARACTERS = load_character_images("characters")
+
 # Função para carregar imagens com tratamento de erros
 def load_images_from_folder(folder_path):
     images = []
@@ -52,7 +68,7 @@ TITLE_IMAGE = pygame.image.load("start_game.png").convert()
 INSTRUCTIONS_IMAGE = pygame.image.load("instructions.png").convert()
 FIRST_IMAGE = pygame.image.load("primeira_pagina.png").convert()
 SECOND_IMAGE = pygame.image.load("second_page.png").convert()
-BACKGROUND_IMAGE = pygame.image.load("background_1.png").convert()
+BACKGROUND_IMAGE = pygame.image.load("background_2.png").convert()
 
 # Caminho das imagens do cliente
 CLIENTE_EM_PE = pygame.image.load("client_pe.png").convert_alpha()   # Substitua pelo caminho correto
@@ -222,13 +238,14 @@ class Character(pygame.sprite.Sprite):
             self.set_target(customer.rect.center)
 
 class Customer(pygame.sprite.Sprite):
-    def __init__(self, start_position, order_image):
+    def __init__(self, start_position, meal_image, order_image, character_name):
         super().__init__()
-        self.image_standing = CLIENTE_EM_PE
-        self.image_sitting = CLIENTE_SENTADO
-        self.image = self.image_standing
+        self.character_name = character_name  # Nome do personagem (ex.: 'yellow', 'orange')
+        self.images = CHARACTERS[character_name]  # Imagens específicas do personagem
+        self.image = self.images["standing"]  # Começa com a imagem de "em pé"
         self.rect = self.image.get_rect(center=start_position)
         self.waiting_for_order = False
+        self.meal_image = meal_image  # Imagem de pedido (da pasta meals)
         self.order = order_image
         self.target_position = None
         self.speed = 10
@@ -240,7 +257,16 @@ class Customer(pygame.sprite.Sprite):
         self.mad = False
         self.payment_amount = 15
         self.show_order = False  # Novo atributo para controlar a exibição do pedido
+        self.order_timer = None  # Novo atributo para temporizador do pedido
 
+
+    def draw_meal(self, screen):
+        # Renderizar a imagem de pedido (meal) acima do cliente quando necessário
+        if self.show_order:
+            screen.blit(
+                self.meal_image,
+                (self.rect.centerx - self.meal_image.get_width() // 2, self.rect.top - self.meal_image.get_height())
+            )
 
     def set_target(self, target_position):
         self.target_position = target_position
@@ -258,13 +284,21 @@ class Customer(pygame.sprite.Sprite):
             else:
                 self.rect.center = self.target_position
                 self.is_moving = False
-                self.image = self.image_sitting
+                self.image = self.images["waiting"]  # Troca para imagem de "sentado esperando"
                 self.waiting_for_order = True
+                self.order_timer = time.time() + random.uniform(5, 8)  # Define o tempo para fazer o pedido
 
-        if self.received_order and not self.payment_timer:
-            self.payment_timer = time.time() + random.uniform(3, 8)
+        if self.received_order:
+            self.image = self.images["eating"]  # Troca para imagem de "comendo"
 
-        elif self.payment_timer and time.time() >= self.payment_timer:
+        if self.mad:
+            self.image = self.images["mad"]  # Troca para imagem de "bravo"
+
+        if self.waiting_for_order and self.order_timer and time.time() >= self.order_timer:
+            self.show_order = True
+            self.image = self.images["making_order"]  # Troca para imagem de "pedindo"
+
+        if self.payment_timer and time.time() >= self.payment_timer:
             self.kill()
 
     def draw_order(self, screen):
@@ -284,9 +318,6 @@ class Table(pygame.sprite.Sprite):
         self.occupied = False  # Indica se a mesa está ocupada
         self.order_on_table = None  # Novo atributo para o pedido na mesa
 
-
-# Carregar a imagem de fundo para a primeira fase
-BACKGROUND_IMAGE = pygame.image.load("background_1.png").convert()
 
 class Game:
     def __init__(self):
@@ -320,17 +351,20 @@ class Game:
     def spawn_customer(self):
         if len(self.customers) < len(self.queue_positions) and time.time() - self.last_customer_time > 10:
             queue_position = self.queue_positions[len(self.customers)]
-            order_image = random.choice(ORDERS)
-            new_customer = Customer(queue_position, order_image)
+            meal_image = random.choice(MEALS)
+            order_image = MEAL2ORDER[meal_image]  # Imagem correspondente para a mesa de entregas
+
+            character_name = random.choice(list(CHARACTERS.keys()))  # Escolhe um personagem aleatório
+            new_customer = Customer(queue_position, meal_image, order_image, character_name)
             self.customers.add(new_customer)
             self.all_sprites.add(new_customer)
             self.last_customer_time = time.time()
 
     def deliver_order_to_customer(self, customer):
         wait_time = time.time() - self.order_ready_timer[customer.order]
-        if wait_time > 5:
+        if wait_time > 7:
             customer.mad = True
-            customer.payment_amount = 10
+            customer.payment_amount = 5
         else:
             customer.payment_amount = 15
         self.score += customer.payment_amount
@@ -395,13 +429,14 @@ class Game:
                     # Clique para registrar o pedido de um cliente sentado
                     for customer in self.customers:
                         if customer.waiting_for_order and not customer.attended:
-                            customer.show_order = False  # Oculta o pedido até a garçonete chegar
-                            for table in self.tables:
-                                if table["area"].collidepoint(pos) and customer.rect.colliderect(table["area"]):
-                                    # Move a garçonete para a `delivery_position` da mesa para registrar o pedido
-                                    self.character.set_target(table["delivery_position"])
-                                    self.waitress_target_customer = customer
-                                    break
+                            # Verifica se o temporizador expirou antes de fazer o pedido
+                            if customer.order_timer and time.time() >= customer.order_timer:
+                                customer.show_order = False  # Oculta o pedido até a garçonete atender
+                                for table in self.tables:
+                                    if table["area"].collidepoint(pos) and customer.rect.colliderect(table["area"]):
+                                        self.character.set_target(table["delivery_position"])
+                                        self.waitress_target_customer = customer
+                                        break
 
                      # Quando a garçonete atingir a posição de coleta e o pedido tiver sido clicado
                     if self.target_order_click and self.character.pick_up_order():
@@ -424,7 +459,8 @@ class Game:
                                     screen.blit(customer.order, (customer.rect.centerx - customer.order.get_width() // 2,
                                                                 customer.rect.top - customer.order.get_height()))
                                             
-                    
+            for customer in self.customers:
+                customer.draw_meal(screen)
 
             # Verifica se a garçonete chegou ao cliente para entregar o pedido
             if hasattr(self, 'target_customer_for_delivery') and self.target_customer_for_delivery and self.character.deliver_order(self.target_customer_for_delivery):
@@ -497,9 +533,9 @@ class Game:
             self.update_orders_on_delivery_table()
             self.all_sprites.draw(screen)
 
-            # Desenhar pedidos na mesa dos clientes
-            for customer in self.customers:
-                customer.draw_order(screen)
+            # # Desenhar pedidos na mesa dos clientes
+            # for customer in self.customers:
+            #     customer.draw_order(screen)
 
             # Exibir pontuação
             self.show_score()
