@@ -73,8 +73,6 @@ SECOND_IMAGE = pygame.image.load("second_page.png").convert()
 BACKGROUND_IMAGE = pygame.image.load("background_2.png").convert()
 
 # Caminho das imagens do cliente
-CLIENTE_EM_PE = pygame.image.load("client_pe.png").convert_alpha()   # Substitua pelo caminho correto
-CLIENTE_SENTADO = pygame.image.load("cliente_sentado.png").convert_alpha()   # Substitua pelo caminho correto
 MAD_CLIENT_IMAGE = pygame.image.load("mad_client.png").convert_alpha()
 
 # Configuração da área da "mesa de entregas"
@@ -384,9 +382,23 @@ class Table(pygame.sprite.Sprite):
 class Game:
 	def __init__(self):
 		self.character = Character(1053, 720)
-
+		self.current_phase = 1
+		self.phases = {
+			1: {
+				"goal": 15, 
+				"background": BACKGROUND_IMAGE,
+				"meals_folder": "meals",
+        "orders_folder": "orders",
+				},  # Meta e fundo da fase 1
+			2: {
+				"goal": 110, 
+				"background": pygame.image.load("fase_2_background.png").convert(),
+				"meals_folder": "meals_fase_2",
+        "orders_folder": "orders_fase_2",
+				},  # Meta e fundo da fase 2
+    }
 		# Adiciona o temporizador
-		self.phase_duration = 120  # Duração da fase em segundos (2 minutos)
+		self.phase_duration = 40  # Duração da fase em segundos (2 minutos)
 		self.start_time = time.time()  # Tempo de início da fase
 		
 		# Definindo mesas com posições de entrega
@@ -405,7 +417,10 @@ class Game:
 		self.all_sprites = pygame.sprite.Group(self.character)
 		self.selected_customer = None
 		self.score = 0
-		self.goal = 105  # Meta da fase
+		self.goal = self.phases[self.current_phase]["goal"]
+		self.background = self.phases[self.current_phase]["background"]
+		self.meals, self.orders = self.load_phase_orders(self.current_phase)
+		self.meal2order = {self.meals[i]: self.orders[i] for i in range(len(self.meals))}
 		self.last_customer_time = time.time()
 		self.order_queue = []
 		self.order_ready_timer = {}
@@ -414,18 +429,70 @@ class Game:
 		self.target_customer_for_delivery = None  # Cliente que receberá o pedido
 		self.delivery_in_progress = False  # Indica se a garçonete está em processo de entrega
 
+	def reset_phase(self):
+		# Resetar pontuação e temporizador
+		self.score = 0
+		self.start_time = time.time()
+
+		# Limpar filas e pedidos
+		self.order_queue.clear()
+		self.order_ready_timer.clear()
+		self.delivery_positions.clear()
+
+		# Resetar clientes
+		for customer in self.customers:
+				if customer.table is not None:
+						customer.table["occupied"] = False
+						customer.table["order_on_table"] = None
+				customer.kill()
+
+		# Resetar sprites e objetos
+		self.customers.empty()
+		self.all_sprites.empty()
+		self.all_sprites.add(self.character)  # Re-adiciona a garçonete
+
+	def load_phase_orders(self, phase):
+		meals_folder = self.phases[phase]["meals_folder"]
+		orders_folder = self.phases[phase]["orders_folder"]
+
+		meals = load_images_from_folder(meals_folder)
+		orders = load_images_from_folder(orders_folder)
+
+		if len(meals) != len(orders):
+				print(f"Aviso: O número de refeições e pedidos na fase {phase} não é o mesmo.")
+		
+		return meals, orders
+
+	def advance_to_next_phase(self):
+		self.current_phase += 1
+		self.reset_phase()  # Resetar o estado do jogo
+		if self.current_phase in self.phases:
+				# Atualiza as configurações da nova fase
+				self.goal = self.phases[self.current_phase]["goal"]
+				self.background = self.phases[self.current_phase]["background"]
+				self.start_time = time.time()
+				self.score = 0  # Reseta a pontuação
+				self.order_queue.clear()  # Limpa os pedidos
+				self.meals, self.orders = self.load_phase_orders(self.current_phase)
+				self.meal2order = {self.meals[i]: self.orders[i] for i in range(len(self.meals))}	
+				print(f"Iniciando a fase {self.current_phase}")
+		else:
+				print("Todas as fases concluídas! Você venceu o jogo.")
+				pygame.quit()
+				exit()
+
 
 	def spawn_customer(self):
 		if len(self.customers) < len(self.queue_positions) and time.time() - self.last_customer_time > random.uniform(5, 10):
-			queue_position = self.queue_positions[len(self.customers)]
-			meal_image = random.choice(MEALS)
-			order_image = MEAL2ORDER[meal_image]  # Imagem correspondente para a mesa de entregas
+				queue_position = self.queue_positions[len(self.customers)]
+				meal_image = random.choice(self.meals)
+				order_image = self.meal2order[meal_image]
 
-			character_name = random.choice(list(CHARACTERS.keys()))  # Escolhe um personagem aleatório
-			new_customer = Customer(queue_position, meal_image, order_image, character_name)
-			self.customers.add(new_customer)
-			self.all_sprites.add(new_customer)
-			self.last_customer_time = time.time()
+				character_name = random.choice(list(CHARACTERS.keys()))  # Escolhe um personagem aleatório
+				new_customer = Customer(queue_position, meal_image, order_image, character_name)
+				self.customers.add(new_customer)
+				self.all_sprites.add(new_customer)
+				self.last_customer_time = time.time()
 
 	def deliver_order_to_customer(self, customer):
 		wait_time = time.time() - self.order_ready_timer[customer.order]
@@ -439,7 +506,8 @@ class Game:
 
 	def check_goal(self):
 		if self.score >= self.goal:
-			print("Meta alcançada! Fase concluída.")
+				print(f"Meta da fase {self.current_phase} alcançada!")
+				self.advance_to_next_phase()
 
 	def run(self):
 		running = True
@@ -447,7 +515,7 @@ class Game:
 		self.selected_customer_for_seating = None
 
 		while running:
-			screen.blit(BACKGROUND_IMAGE, (0, 0))
+			screen.blit(self.background, (0, 0))
 
 			# Calcula o tempo restante
 			elapsed_time = time.time() - self.start_time
@@ -455,10 +523,10 @@ class Game:
 
 			# Finaliza a fase se o tempo acabar
 			if remaining_time <= 0:
-					print("Tempo esgotado! Fase concluída.")
-					running = False
-					continue
-
+				self.check_goal()
+				print("Tempo esgotado! Fase concluída.")
+				continue
+			
 			# Mostra o temporizador na tela
 			self.show_timer(remaining_time)
 
@@ -538,8 +606,6 @@ class Game:
 												customer.received_order = True
 												customer.payment_timer = time.time() + random.uniform(5, 8)  # Define o tempo para fazer o pedido
 												customer = None
-											
-
 												
 					print(self.delivery_positions)
 
