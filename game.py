@@ -522,48 +522,49 @@ class Table(pygame.sprite.Sprite):
 class Game:
 	def __init__(self):
 		self.character = Character(1053, 720)
-		self.current_phase = 5
+		self.current_phase = 1
 		self.music_phase = None  # Fase cuja música está tocando
+		self.get_current_music = None
 		self.phases = {
 			1: {
-				"goal": 0, 
+				"goal": 105, 
 				"background": BACKGROUND_IMAGE,
 				"meals_folder": "meals",
         "orders_folder": "orders",
 				},  # Meta e fundo da fase 1
 			2: {
-				"goal": 0, 
+				"goal": 110, 
 				"background": pygame.image.load("fase_2_background.png").convert(),
 				"meals_folder": "meals_fase_2",
         "orders_folder": "orders_fase_2",
 				},  # Meta e fundo da fase 2
 			3: {
-				"goal": 0, 
+				"goal": 115, 
 				"background": pygame.image.load("fase_3_background.png").convert(),
 				"meals_folder": "meals_fase_3",
         "orders_folder": "orders_fase_3",
 				},
 			4: {
-				"goal": 0, 
+				"goal": 120, 
 				"background": pygame.image.load("fase_4_background.png").convert(),
 				"meals_folder": "meals_fase_4",
 				"orders_folder": "orders_fase_4",
 			},
 			5: {
-				"goal": 0, 
+				"goal": 125, 
 				"background": pygame.image.load("fase5.png").convert(),
 				"meals_folder": "meals_fase_5",
 				"orders_folder": "orders_fase_5",
 			},
 			6: {
-				"goal": 0, 
+				"goal": 130, 
 				"background": pygame.image.load("fase6.png").convert(),
 				"meals_folder": "meals_fase_6",
 				"orders_folder": "orders_fase_6",
 			},	
     }
 		# Adiciona o temporizador
-		self.phase_duration = 15  # Duração da fase em segundos (2 minutos)
+		self.phase_duration = 120  # Duração da fase em segundos (2 minutos)
 		self.start_time = time.time()  # Tempo de início da fase
 		
 		# Definindo mesas com posições de entrega
@@ -632,17 +633,17 @@ class Game:
 	def advance_to_next_phase(self, teste):
 		pygame.mixer.music.stop()  # Para o áudio atual
 		if(teste == "passou"):
-			# if(self.current_phase == 2):
-			# 	play_video("video0.mp4", screen, self.background)
-			# if(self.current_phase == 3):
-			# 	play_video("video2.mp4", screen, self.background)
-			# elif(self.current_phase == 4):
-			# 	play_video("video3.mp4", screen, self.background)
-			# if(self.current_phase == 5):
-			# 	play_video("video4.mp4", screen, self.background)
-			if(self.current_phase == 6):
-				# play_video("video5.mp4", screen, self.background)
-				# play_video("video6.mp4", screen, self.background)
+			if(self.current_phase == 2):
+				play_video("video0.mp4", screen, self.background)
+			elif(self.current_phase == 3):
+				play_video("video2.mp4", screen, self.background)
+			elif(self.current_phase == 4):
+				play_video("video3.mp4", screen, self.background)
+			elif(self.current_phase == 5):
+				play_video("video4.mp4", screen, self.background)
+			elif(self.current_phase == 6):
+				play_video("video5.mp4", screen, self.background)
+				play_video("video6.mp4", screen, self.background)
 				pygame.mixer.init()
 				show_end_screen()
 			
@@ -712,6 +713,31 @@ class Game:
 		else: 
 			self.advance_to_next_phase("nao")
 
+	def play_temporary_music(self, temp_music_path, callback_music_path):
+		"""
+		Toca uma música temporária e volta para a música de fundo automaticamente.
+		"""
+		if not os.path.exists(temp_music_path) or not os.path.exists(callback_music_path):
+				print(f"Erro: Caminho inválido para músicas - {temp_music_path}, {callback_music_path}")
+				return
+
+		# Configura o evento para quando a música terminar
+		pygame.mixer.music.set_endevent(pygame.USEREVENT)
+		pygame.mixer.music.load(temp_music_path)
+		pygame.mixer.music.play(0)
+
+		running = True
+		while running:
+				for event in pygame.event.get():
+						if event.type == pygame.USEREVENT:  # Música temporária terminou
+								pygame.mixer.music.load(callback_music_path)
+								pygame.mixer.music.play(-1)  # Reinicia a música de fase
+								running = False
+						elif event.type == pygame.QUIT:
+								pygame.quit()
+								exit()
+
+
 	def run(self):
 		running = True
 		self.target_order_click = False  # Inicializa o estado do clique para pegar o pedido
@@ -719,17 +745,21 @@ class Game:
 
 		while running:
 			screen.blit(self.background, (0, 0))
+			
 
 			if self.music_phase != self.current_phase:  # Detecta mudança de fase
 				self.music_phase = self.current_phase
 				if self.current_phase == 1 or self.current_phase == 2:
 						print("TESTE 1: Música da Fase 1 ou 2")
-						pygame.mixer.music.load("nintendo.mp3")  # Caminho da música da fase 1 e 2
+						self.get_current_music = "nintendo.mp3"
+						pygame.mixer.music.load(self.get_current_music)  # Caminho da música da fase 1 e 2
 				elif self.current_phase == 3 or self.current_phase == 4:
 						print("TESTE 2: Música da Fase 3 ou 4")
+						self.get_current_music = "pokemon.mp3"
 						pygame.mixer.music.load("pokemon.mp3")  # Caminho da música da fase 3 e 4
 				elif self.current_phase >= 5:
 						print("TESTE 3: Música da Fase 5+")
+						self.get_current_music = "natal.mp3"
 						pygame.mixer.music.load("natal.mp3")  # Música para fases 5+
 				pygame.mixer.music.set_volume(1)
 				pygame.mixer.music.play(-1)  # Repetir indefinidamente
@@ -965,9 +995,7 @@ class Game:
 				if customer.payment_timer and time.time() >= customer.payment_timer:
 					customer.table["occupied"] = False
 					customer.table["order_on_table"] = None  # Remove o pedido da mesa
-					pygame.mixer.music.load("tchau.mp3")  # Substitua pelo caminho correto
-					pygame.mixer.music.set_volume(1)  # Ajuste o volume (0.0 a 1.0)
-					pygame.mixer.music.play()  # -1 significa repetir indefinidamente
+					#self.play_temporary_music("tchau.mp3", self.get_current_music)
 					customer.kill()  # Remove o cliente do jogo
 
 			# Remover clientes que saíram e liberar mesas
