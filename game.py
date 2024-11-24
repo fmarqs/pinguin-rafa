@@ -3,6 +3,9 @@ import random
 import time
 import os
 import math
+import cv2
+from moviepy import VideoFileClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 
 # Inicializando o Pygame
 pygame.init()
@@ -23,6 +26,61 @@ FPS = 120
 # Fonte para exibir texto
 font = pygame.font.Font(None, 36)
 
+def play_video(video_path, screen, background=None):
+    clip = VideoFileClip(video_path)
+    audio_path = "temp_audio.mp3"
+    
+    # Extrai o áudio do vídeo para um arquivo temporário
+    clip.audio.write_audiofile(audio_path, fps=44100, logger=None)
+
+    # Configurações do Pygame para o vídeo
+    pygame.display.set_caption("Video Playback")
+
+    # Inicia o áudio com o pygame.mixer
+    pygame.mixer.init()
+    pygame.mixer.music.load(audio_path)
+    pygame.mixer.music.play()
+
+    start_time = time.time()  # Marca o início da reprodução
+
+    # Loop para exibição dos quadros
+    for frame_index, frame in enumerate(clip.iter_frames(fps=clip.fps, dtype="uint8")):
+        elapsed_time = time.time() - start_time
+        expected_time = frame_index / clip.fps  # Tempo esperado para o quadro atual
+
+        # Ajuste de tempo para sincronizar áudio e vídeo
+        if elapsed_time < expected_time:
+            time.sleep(expected_time - elapsed_time)
+
+        frame_surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+        screen.blit(frame_surface, (0, 0))
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.mixer.music.stop()
+                pygame.mixer.quit()
+                clip.close()
+                pygame.quit()
+                exit()
+
+    # Finaliza o vídeo e limpa o áudio
+    pygame.mixer.music.stop()
+    pygame.mixer.quit()
+    clip.close()
+
+    # Remove o arquivo de áudio temporário
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+
+    # Restaurar a tela do jogo
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    if background:
+        screen.blit(background, (0, 0))  # Redesenha o fundo, se fornecido
+        pygame.display.flip()  # Atualiza a tela do Pygame
+
+
+
 def load_character_images(folder_path):
 	characters = {}
 	for character_name in os.listdir(folder_path):
@@ -37,7 +95,10 @@ def load_character_images(folder_path):
 			}
 	return characters
 
-CHARACTERS = load_character_images("characters")
+CHARACTERS = load_character_images("characters/pinguins")
+CHARACTERS_FASE_5 = load_character_images("characters/fase5")
+CHARACTERS_FASE_6 = load_character_images("characters/fase6")
+
 
 # Função para carregar imagens com tratamento de erros
 def load_images_from_folder(folder_path):
@@ -62,7 +123,6 @@ if len(ORDERS) != len(MEALS):
 MEAL2ORDER = {MEALS[i]: ORDERS[i] for i in range(min(len(MEALS), len(ORDERS)))}
 
 # Carregar imagens da garçonete e da mesa
-WAITER_IMAGE = pygame.image.load("client.png").convert_alpha()  # Substitua por caminho correto
 TABLE_IMAGE = pygame.image.load("empty_table.png").convert_alpha()    # Substitua por caminho correto
 
 # Carregar imagens de tela de título e instruções
@@ -71,6 +131,9 @@ INSTRUCTIONS_IMAGE = pygame.image.load("instructions.png").convert()
 FIRST_IMAGE = pygame.image.load("primeira_pagina.png").convert()
 SECOND_IMAGE = pygame.image.load("second_page.png").convert()
 BACKGROUND_IMAGE = pygame.image.load("background_2.png").convert()
+
+NAMORADOS = pygame.image.load("vaidarnamoro.png")
+FAMILIA = pygame.image.load("final.png")
 
 # Caminho das imagens do cliente
 MAD_CLIENT_IMAGE = pygame.image.load("mad_client.png").convert_alpha()
@@ -100,10 +163,15 @@ def display_mouse_position():
 
 # Função para exibir a tela de título
 def show_title_screen():
+	pygame.mixer.init()
+	pygame.mixer.music.load("harvest.mp3")  # Substitua pelo caminho correto
+	pygame.mixer.music.set_volume(1)  # Ajuste o volume (0.0 a 1.0)
+	pygame.mixer.music.play(-1)  # -1 significa repetir indefinidamente
 	title_x, title_y = get_centered_position(TITLE_IMAGE)
 
 	title_running = True
 	while title_running:
+		
 		screen.fill(BLACK)  # Limpa a tela a cada quadro
 		screen.blit(TITLE_IMAGE, (title_x, title_y))  # Desenha a imagem do título centralizada
 
@@ -135,13 +203,14 @@ def show_title_screen():
 
 # Função para exibir a tela de instruções
 def show_first_screen():
+	screen.fill(BLACK)  # Limpa a tela a cada quadro
 	first_x, first_y = get_centered_position(FIRST_IMAGE)
 
 	primeira_parte = True
 	segunda_parte = False
 	first_screen = True
 	while first_screen:
-		screen.fill(BLACK)  # Limpa a tela a cada quadro
+		
 		if segunda_parte:
 			screen.blit(SECOND_IMAGE, (first_x, first_y))  # Desenha a imagem de instruções centralizada
 		else: 
@@ -176,6 +245,57 @@ def show_first_screen():
 		
 		pygame.display.flip()
 		clock.tick(FPS)
+
+	# Função para exibir a tela de instruções
+def show_end_screen():
+    screen.fill(BLACK)  # Limpa a tela a cada quadro
+    first_x, first_y = get_centered_position(NAMORADOS)
+    primeira_parte = True
+    segunda_parte = False
+    first_screen = True
+
+    audio_playing = False  # Controle para evitar repetição do áudio
+
+    while first_screen:
+        if segunda_parte:
+            if not audio_playing:  # Toca o áudio da segunda parte apenas uma vez
+                pygame.mixer.music.load("jingle.mp3")  # Substitua pelo caminho correto
+                pygame.mixer.music.set_volume(1)
+                pygame.mixer.music.play(-1)  # Repetir indefinidamente
+                audio_playing = True
+            screen.blit(FAMILIA, (first_x, first_y))  # Desenha a imagem centralizada
+        else:
+            if not audio_playing:  # Toca o áudio da primeira parte apenas uma vez
+                pygame.mixer.music.load("évoce.mp3")  # Substitua pelo caminho correto
+                pygame.mixer.music.set_volume(1)
+                pygame.mixer.music.play(-1)  # Repetir indefinidamente
+                audio_playing = True
+            screen.blit(NAMORADOS, (first_x, first_y))  # Desenha a imagem centralizada
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                pos = pygame.mouse.get_pos()
+
+                # Verifique se o clique foi na área de "Next"
+                if 1554 < pos[0] < 1716 and 975 < pos[1] < 1058:  # Ajuste as coordenadas conforme necessário
+                    if primeira_parte:
+                        segunda_parte = True
+                        primeira_parte = False
+                        audio_playing = False  # Permite trocar o áudio para a próxima parte
+                    else:
+                        first_screen = False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                first_screen = False
+
+        # Exibe a posição do mouse na tela
+        display_mouse_position()
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
 
 
 # Função para exibir a tela de instruções
@@ -214,17 +334,32 @@ def show_instructions_screen():
 class Character(pygame.sprite.Sprite):
 	def __init__(self, x, y):
 		super().__init__()
-		self.images = {
-			"up": pygame.image.load("up.png").convert_alpha(),
-			"down": pygame.image.load("down.png").convert_alpha(),
-			"left": pygame.image.load("left.png").convert_alpha(),
-			"right": pygame.image.load("right.png").convert_alpha(),
+		self.images_by_phase = {
+				1: {  # Fase 1
+						"up": pygame.image.load("up.png").convert_alpha(),
+						"down": pygame.image.load("down.png").convert_alpha(),
+						"left": pygame.image.load("left.png").convert_alpha(),
+						"right": pygame.image.load("right.png").convert_alpha(),
+				},
+				6: {  # Fase 6
+						"up": pygame.image.load("fernando_up.png").convert_alpha(),
+						"down": pygame.image.load("fernando_down.png").convert_alpha(),
+						"left": pygame.image.load("fernando_left.png").convert_alpha(),
+						"right": pygame.image.load("fernando_right.png").convert_alpha(),
+				},
 		}
+		self.images = self.images_by_phase[1]  # Começa com as imagens da fase 1
 		self.image = self.images["down"]  # Posição inicial (facing down)
 		self.rect = self.image.get_rect(center=(x, y))
 		self.speed = 10
 		self.target_pos = None
 		self.carrying_meal = None
+
+	def change_phase(self, phase):
+		"""Muda as imagens de acordo com a fase."""
+		if phase in self.images_by_phase:
+				self.images = self.images_by_phase[phase]
+				self.image = self.images["down"]  # Posição padrão
 
 	def draw(self, screen):
 		# Desenhe a garçonete
@@ -294,7 +429,12 @@ class Customer(pygame.sprite.Sprite):
 	def __init__(self, start_position, meal_image, order_image, character_name):
 		super().__init__()
 		self.character_name = character_name  # Nome do personagem (ex.: 'yellow', 'orange')
-		self.images = CHARACTERS[character_name]  # Imagens específicas do personagem
+		if character_name in CHARACTERS:
+			self.images = CHARACTERS[character_name]
+		elif character_name in CHARACTERS_FASE_5:
+			self.images = CHARACTERS_FASE_5[character_name]
+		elif character_name in CHARACTERS_FASE_6:
+			self.images = CHARACTERS_FASE_6[character_name]
 		self.image = self.images["standing"]  # Começa com a imagem de "em pé"
 		self.rect = self.image.get_rect(center=start_position)
 		self.waiting_for_order = False
@@ -382,23 +522,48 @@ class Table(pygame.sprite.Sprite):
 class Game:
 	def __init__(self):
 		self.character = Character(1053, 720)
-		self.current_phase = 1
+		self.current_phase = 5
+		self.music_phase = None  # Fase cuja música está tocando
 		self.phases = {
 			1: {
-				"goal": 15, 
+				"goal": 0, 
 				"background": BACKGROUND_IMAGE,
 				"meals_folder": "meals",
         "orders_folder": "orders",
 				},  # Meta e fundo da fase 1
 			2: {
-				"goal": 110, 
+				"goal": 0, 
 				"background": pygame.image.load("fase_2_background.png").convert(),
 				"meals_folder": "meals_fase_2",
         "orders_folder": "orders_fase_2",
 				},  # Meta e fundo da fase 2
+			3: {
+				"goal": 0, 
+				"background": pygame.image.load("fase_3_background.png").convert(),
+				"meals_folder": "meals_fase_3",
+        "orders_folder": "orders_fase_3",
+				},
+			4: {
+				"goal": 0, 
+				"background": pygame.image.load("fase_4_background.png").convert(),
+				"meals_folder": "meals_fase_4",
+				"orders_folder": "orders_fase_4",
+			},
+			5: {
+				"goal": 0, 
+				"background": pygame.image.load("fase5.png").convert(),
+				"meals_folder": "meals_fase_5",
+				"orders_folder": "orders_fase_5",
+			},
+			6: {
+				"goal": 0, 
+				"background": pygame.image.load("fase6.png").convert(),
+				"meals_folder": "meals_fase_6",
+				"orders_folder": "orders_fase_6",
+			},	
     }
 		# Adiciona o temporizador
-		self.phase_duration = 40  # Duração da fase em segundos (2 minutos)
+		self.phase_duration = 15  # Duração da fase em segundos (2 minutos)
 		self.start_time = time.time()  # Tempo de início da fase
 		
 		# Definindo mesas com posições de entrega
@@ -462,24 +627,55 @@ class Game:
 				print(f"Aviso: O número de refeições e pedidos na fase {phase} não é o mesmo.")
 		
 		return meals, orders
+		
 
-	def advance_to_next_phase(self):
-		self.current_phase += 1
-		self.reset_phase()  # Resetar o estado do jogo
-		if self.current_phase in self.phases:
-				# Atualiza as configurações da nova fase
-				self.goal = self.phases[self.current_phase]["goal"]
-				self.background = self.phases[self.current_phase]["background"]
-				self.start_time = time.time()
-				self.score = 0  # Reseta a pontuação
-				self.order_queue.clear()  # Limpa os pedidos
-				self.meals, self.orders = self.load_phase_orders(self.current_phase)
-				self.meal2order = {self.meals[i]: self.orders[i] for i in range(len(self.meals))}	
-				print(f"Iniciando a fase {self.current_phase}")
-		else:
-				print("Todas as fases concluídas! Você venceu o jogo.")
-				pygame.quit()
-				exit()
+	def advance_to_next_phase(self, teste):
+		pygame.mixer.music.stop()  # Para o áudio atual
+		if(teste == "passou"):
+			# if(self.current_phase == 2):
+			# 	play_video("video0.mp4", screen, self.background)
+			# if(self.current_phase == 3):
+			# 	play_video("video2.mp4", screen, self.background)
+			# elif(self.current_phase == 4):
+			# 	play_video("video3.mp4", screen, self.background)
+			# if(self.current_phase == 5):
+			# 	play_video("video4.mp4", screen, self.background)
+			if(self.current_phase == 6):
+				# play_video("video5.mp4", screen, self.background)
+				# play_video("video6.mp4", screen, self.background)
+				pygame.mixer.init()
+				show_end_screen()
+			
+			pygame.mixer.init()
+			self.current_phase += 1
+			self.reset_phase()  # Resetar o estado do jogo
+			if self.current_phase in self.phases:
+					# Atualiza as configurações da nova fase
+					self.goal = self.phases[self.current_phase]["goal"]
+					self.background = self.phases[self.current_phase]["background"]
+					self.start_time = time.time()
+					self.score = 0  # Reseta a pontuação
+					self.order_queue.clear()  # Limpa os pedidos
+					self.meals, self.orders = self.load_phase_orders(self.current_phase)
+					self.meal2order = {self.meals[i]: self.orders[i] for i in range(len(self.meals))}
+					self.character.change_phase(self.current_phase)  # Altera as imagens da personagem
+					print(f"Iniciando a fase {self.current_phase}")
+			else:
+					print("Todas as fases concluídas! Você venceu o jogo.")
+					pygame.quit()
+					exit()
+		else: 
+			self.reset_phase()  # Resetar o estado do jogo
+			if self.current_phase in self.phases:
+					# Atualiza as configurações da nova fase
+					self.goal = self.phases[self.current_phase]["goal"]
+					self.background = self.phases[self.current_phase]["background"]
+					self.start_time = time.time()
+					self.score = 0  # Reseta a pontuação
+					self.order_queue.clear()  # Limpa os pedidos
+					self.meals, self.orders = self.load_phase_orders(self.current_phase)
+					self.meal2order = {self.meals[i]: self.orders[i] for i in range(len(self.meals))}	
+					print(f"Iniciando a fase {self.current_phase}")
 
 
 	def spawn_customer(self):
@@ -488,7 +684,12 @@ class Game:
 				meal_image = random.choice(self.meals)
 				order_image = self.meal2order[meal_image]
 
-				character_name = random.choice(list(CHARACTERS.keys()))  # Escolhe um personagem aleatório
+				if(self.current_phase == 5):
+					character_name = random.choice(list(CHARACTERS_FASE_5.keys()))  # Escolhe um personagem aleatório
+				elif(self.current_phase == 6):
+					character_name = random.choice(list(CHARACTERS_FASE_6.keys()))  # Escolhe um personagem aleatório
+				else: 
+					character_name = random.choice(list(CHARACTERS.keys()))  # Escolhe um personagem aleatório
 				new_customer = Customer(queue_position, meal_image, order_image, character_name)
 				self.customers.add(new_customer)
 				self.all_sprites.add(new_customer)
@@ -507,7 +708,9 @@ class Game:
 	def check_goal(self):
 		if self.score >= self.goal:
 				print(f"Meta da fase {self.current_phase} alcançada!")
-				self.advance_to_next_phase()
+				self.advance_to_next_phase("passou")
+		else: 
+			self.advance_to_next_phase("nao")
 
 	def run(self):
 		running = True
@@ -516,6 +719,20 @@ class Game:
 
 		while running:
 			screen.blit(self.background, (0, 0))
+
+			if self.music_phase != self.current_phase:  # Detecta mudança de fase
+				self.music_phase = self.current_phase
+				if self.current_phase == 1 or self.current_phase == 2:
+						print("TESTE 1: Música da Fase 1 ou 2")
+						pygame.mixer.music.load("nintendo.mp3")  # Caminho da música da fase 1 e 2
+				elif self.current_phase == 3 or self.current_phase == 4:
+						print("TESTE 2: Música da Fase 3 ou 4")
+						pygame.mixer.music.load("pokemon.mp3")  # Caminho da música da fase 3 e 4
+				elif self.current_phase >= 5:
+						print("TESTE 3: Música da Fase 5+")
+						pygame.mixer.music.load("natal.mp3")  # Música para fases 5+
+				pygame.mixer.music.set_volume(1)
+				pygame.mixer.music.play(-1)  # Repetir indefinidamente
 
 			# Calcula o tempo restante
 			elapsed_time = time.time() - self.start_time
@@ -748,12 +965,10 @@ class Game:
 				if customer.payment_timer and time.time() >= customer.payment_timer:
 					customer.table["occupied"] = False
 					customer.table["order_on_table"] = None  # Remove o pedido da mesa
-					pygame.mixer.init()
 					pygame.mixer.music.load("tchau.mp3")  # Substitua pelo caminho correto
 					pygame.mixer.music.set_volume(1)  # Ajuste o volume (0.0 a 1.0)
 					pygame.mixer.music.play()  # -1 significa repetir indefinidamente
 					customer.kill()  # Remove o cliente do jogo
-
 
 			# Remover clientes que saíram e liberar mesas
 			# for customer in self.customers:
